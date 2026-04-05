@@ -264,61 +264,38 @@
       },
     };
 
-    scheduleRowsEl.addEventListener('change', (e) => {
-      const el = e.target;
+    // Single delegated handler for all schedule row interactions
+    function handleRowEvent(e) {
+      const el = e.target.closest('[data-i]');
+      if (!el) return;
       const i = parseInt(el.dataset.i);
-      if (isNaN(i)) return;
-      if (el.dataset.field === 'enabled') {
+      const field = el.dataset.field;
+      if (isNaN(i) || !field) return;
+
+      if (field === 'enabled') {
         rows[i].enabled = el.checked;
         render();
-      }
-    });
-
-    scheduleRowsEl.addEventListener('input', (e) => {
-      const el = e.target;
-      const i = parseInt(el.dataset.i);
-      if (isNaN(i)) return;
-      if (el.dataset.field === 'note') {
+      } else if (field === 'note') {
         rows[i].note = el.value;
         generateOutput();
+      } else if (FIELDS[field]) {
+        rows[i][field] = FIELDS[field].flip[rows[i][field]];
+        render();
       }
-    });
-
-    scheduleRowsEl.addEventListener('click', (e) => {
-      const btn = e.target.closest('.toggle-btn');
-      if (!btn) return;
-      const i = parseInt(btn.dataset.i);
-      const field = btn.dataset.field;
-      if (isNaN(i) || !field) return;
-      rows[i][field] = FIELDS[field].flip[rows[i][field]];
-      render();
-    });
+    }
+    scheduleRowsEl.addEventListener('click', handleRowEvent);
+    scheduleRowsEl.addEventListener('input', handleRowEvent);
 
     startDateEl.addEventListener('change', buildRows);
     endDateEl.addEventListener('change', buildRows);
 
-    document.getElementById('recreateBtn').addEventListener('click', () => {
-      rows = [];
-      buildRows();
-    });
-
-    document.getElementById('resetBtn').addEventListener('click', () => {
-      rows = [];
-      initDates();
-      buildRows();
-    });
-
+    document.getElementById('recreateBtn').addEventListener('click', () => { rows = []; buildRows(); });
+    document.getElementById('resetBtn').addEventListener('click', () => { rows = []; initDates(); buildRows(); });
     copyBtn.addEventListener('click', async () => {
-      try {
-        await navigator.clipboard.writeText(outputEl.value);
-        copyFeedback.classList.remove('hidden');
-        setTimeout(() => copyFeedback.classList.add('hidden'), 2000);
-      } catch {
-        outputEl.select();
-        document.execCommand('copy');
-        copyFeedback.classList.remove('hidden');
-        setTimeout(() => copyFeedback.classList.add('hidden'), 2000);
-      }
+      try { await navigator.clipboard.writeText(outputEl.value); }
+      catch { outputEl.select(); document.execCommand('copy'); }
+      copyFeedback.classList.remove('hidden');
+      setTimeout(() => copyFeedback.classList.add('hidden'), 2000);
     });
 
     initDates();
