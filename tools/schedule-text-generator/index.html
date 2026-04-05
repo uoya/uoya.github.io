@@ -40,16 +40,16 @@
         activeVal: 'office',
       },
       lunch: {
-        bento:     { btn: '🍱弁当',     text: '🍱' },
-        'eat-out': { btn: '🍽️弁当不要', text: '🍽️弁当不要' },
+        bento:    { btn: '🍱弁当',    text: '🍱' },
+        'eat-out': { btn: '弁当不要', text: '' },
         flip: { bento: 'eat-out', 'eat-out': 'bento' },
         activeVal: 'bento',
       },
       dinner: {
         home:      { btn: '🏠家で夕食', text: '' },
-        'eat-out': { btn: '🍽️夕飯不要', text: '夕飯不要' },
+        'eat-out': { btn: '夕飯不要', text: '夕飯不要' },
         flip: { home: 'eat-out', 'eat-out': 'home' },
-        activeVal: 'home',
+        activeVal: 'eat-out',
       },
     };
 
@@ -70,15 +70,20 @@
     function dateColorClass(dow) {
       return dow === 0 ? 'color: #dc2626' : dow === 6 ? 'color: #2563eb' : 'color: #1f2937';
     }
+
+    // 修正: 内部データを素直に結合する仕様に書き換え
     function generateLine(row) {
       const dateStr = dateLabel(row.date);
-      let workLunch = FIELDS.work[row.work].text;
-      if (row.work === 'office') workLunch += FIELDS.lunch[row.lunch].text;
-      const parts = [workLunch];
-      const dt = FIELDS.dinner[row.dinner].text;
-      if (dt) parts.push(dt);
-      if (row.note.trim()) parts.push(`（${row.note.trim()}）`);
-      return `${dateStr}  ${parts.join(' ')}`;
+      
+      const parts = [
+        FIELDS.work[row.work].text,
+        FIELDS.lunch[row.lunch].text,
+        FIELDS.dinner[row.dinner].text,
+        row.note.trim() ? `（${row.note.trim()}）` : ''
+      ].filter(Boolean); // 空のテキスト要素（家で夕食の text 等）を除外
+
+      // 各項目をスペース区切りで素直に結合
+      return `${dateStr} ${parts.join(' ')}`;
     }
 
     class ScheduleGenerator extends LitElement {
@@ -89,7 +94,7 @@
         copied: { state: true },
       };
 
-      createRenderRoot() { return this; } // use light DOM for Tailwind
+      createRenderRoot() { return this; }
 
       constructor() {
         super();
@@ -132,10 +137,22 @@
         this.rows = this._buildRows(this.rows);
       }
 
+      // 修正: 選択値の切り替え時に「在宅なら弁当・夕飯不要」を強制する処理を追加
       _toggle(i, field) {
-        this.rows = this.rows.map((r, idx) =>
-          idx === i ? { ...r, [field]: FIELDS[field].flip[r[field]] } : r
-        );
+        this.rows = this.rows.map((r, idx) => {
+          if (idx !== i) return r;
+          
+          const newVal = FIELDS[field].flip[r[field]];
+          const newRow = { ...r, [field]: newVal };
+
+          // 在宅に切り替わった場合、強制的に弁当不要＆家で夕食にする
+          if (field === 'work' && newVal === 'home') {
+            newRow.lunch = 'eat-out';
+            newRow.dinner = 'home';
+          }
+
+          return newRow;
+        });
       }
 
       _setEnabled(i, checked) {
@@ -162,7 +179,7 @@
       async _copy() {
         const text = this._output;
         try { await navigator.clipboard.writeText(text); }
-        catch { /* fallback handled by textarea select */ }
+        catch { /* fallback */ }
         this.copied = true;
         setTimeout(() => { this.copied = false; }, 2000);
       }
@@ -210,7 +227,6 @@
 
         return html`
           <div class="max-w-2xl mx-auto px-4 pt-4 pb-2 w-full flex flex-col min-h-0 flex-1">
-            <!-- Header + Date Range -->
             <div class="shrink-0 mb-3">
               <h1 class="text-lg font-bold text-gray-800 mb-3">週間予定テキスト作成</h1>
               <div class="bg-white rounded-lg shadow-sm border px-4 py-2.5 flex items-center gap-3">
@@ -227,12 +243,10 @@
               </div>
             </div>
 
-            <!-- Schedule Rows -->
             <div class="space-y-2 flex-1 min-h-0 pb-2">
               ${this.rows.map((row, i) => this._renderRow(row, i))}
             </div>
 
-            <!-- Output -->
             <div class="shrink-0 bg-white rounded-lg shadow-sm border p-3 mt-2">
               <div class="flex items-center justify-between mb-2">
                 <span class="text-sm font-medium text-gray-700">出力</span>
