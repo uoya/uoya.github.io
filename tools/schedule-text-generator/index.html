@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>週間予定テキスト作成</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style type="text/tailwindcss">
+    @theme { --color-brand: #3b82f6; }
+    .toggle-btn {
+      @apply px-3 py-1.5 rounded-md text-sm font-medium border cursor-pointer select-none transition-colors;
+    }
+    .toggle-btn[data-active] {
+      @apply bg-blue-600 text-white border-blue-600;
+    }
+    .toggle-btn:not([data-active]) {
+      @apply bg-white text-gray-600 border-gray-300 hover:bg-gray-50;
+    }
+    .date-trigger { @apply relative cursor-pointer; }
+    .date-trigger input[type="date"] {
+      position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer;
+    }
+  </style>
+</head>
+<body class="bg-gray-50 h-screen flex flex-col">
+
+  <schedule-generator></schedule-generator>
+
+  <script type="module">
+    import { LitElement, html, nothing } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
+
+    const DAYS = ['日', '月', '火', '水', '木', '金', '土'];
+
+    const FIELDS = {
+      work: {
+        office: { btn: '💼出勤', text: '💼出勤' },
+        home:   { btn: '🏠在宅', text: '在宅' },
+        flip: { office: 'home', home: 'office' },
+        activeVal: 'office',
+      },
+      lunch: {
+        bento:     { btn: '🍱弁当',     text: '🍱' },
+        'eat-out': { btn: '🍽️弁当不要', text: '🍽️弁当不要' },
+        flip: { bento: 'eat-out', 'eat-out': 'bento' },
+        activeVal: 'bento',
+      },
+      dinner: {
+        home:      { btn: '🏠家で夕食', text: '' },
+        'eat-out': { btn: '🍽️夕飯不要', text: '夕飯不要' },
+        flip: { home: 'eat-out', 'eat-out': 'home' },
+        activeVal: 'home',
+      },
+    };
+
+    function toIso(d) {
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    }
+    function parseIso(s) {
+      const [y,m,d] = s.split('-').map(Number);
+      return new Date(y, m-1, d);
+    }
+    function todayDate() {
+      const d = new Date();
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    }
+    function dateLabel(date) {
+      return `${date.getMonth()+1}/${date.getDate()}(${DAYS[date.getDay()]})`;
+    }
+    function dateColorClass(dow) {
+      return dow === 0 ? 'color: #dc2626' : dow === 6 ? 'color: #2563eb' : 'color: #1f2937';
+    }
+    function generateLine(row) {
+      const dateStr = dateLabel(row.date);
+      let workLunch = FIELDS.work[row.work].text;
+      if (row.work === 'office') workLunch += FIELDS.lunch[row.lunch].text;
+      const parts = [workLunch];
+      const dt = FIELDS.dinner[row.dinner].text;
+      if (dt) parts.push(dt);
+      if (row.note.trim()) parts.push(`（${row.note.trim()}）`);
+      return `${dateStr}  ${parts.join(' ')}`;
+    }
+
+    class ScheduleGenerator extends LitElement {
+      static properties = {
+        rows: { state: true },
+        startDate: { state: true },
+        endDate: { state: true },
+        copied: { state: true },
+      };
+
+      createRenderRoot() { return this; } // use light DOM for Tailwind
+
+      constructor() {
+        super();
+        const start = todayDate();
+        const end = new Date(start);
+        end.setDate(end.getDate() + 6);
+        this.startDate = toIso(start);
+        this.endDate = toIso(end);
+        this.rows = this._buildRows([]);
+        this.copied = false;
+      }
+
+      _buildRows(oldRows) {
+        const start = parseIso(this.startDate);
+        const end = parseIso(this.endDate);
+        if (isNaN(start) || isNaN(end) || start > end) return oldRows;
+
+        const oldMap = new Map(oldRows.map(r => [r.date.getTime(), r]));
+        const rows = [];
+        const d = new Date(start);
+        while (d <= end) {
+          const key = d.getTime();
+          if (oldMap.has(key)) {
+            rows.push(oldMap.get(key));
+          } else {
+            const dow = d.getDay();
+            rows.push({ date: new Date(d), enabled: dow !== 0 && dow !== 6, work: 'office', lunch: 'bento', dinner: 'home', note: '' });
+          }
+          d.setDate(d.getDate() + 1);
+        }
+        return rows;
+      }
+
+      get _output() {
+        return this.rows.filter(r => r.enabled).map(generateLine).join('\n');
+      }
+
+      _onDateChange(field, e) {
+        this[field] = e.target.value;
+        this.rows = this._buildRows(this.rows);
+      }
+
+      _toggle(i, field) {
+        this.rows = this.rows.map((r, idx) =>
+          idx === i ? { ...r, [field]: FIELDS[field].flip[r[field]] } : r
+        );
+      }
+
+      _setEnabled(i, checked) {
+        this.rows = this.rows.map((r, idx) =>
+          idx === i ? { ...r, enabled: checked } : r
+        );
+      }
+
+      _setNote(i, value) {
+        this.rows = this.rows.map((r, idx) =>
+          idx === i ? { ...r, note: value } : r
+        );
+      }
+
+      _reset() {
+        const start = todayDate();
+        const end = new Date(start);
+        end.setDate(end.getDate() + 6);
+        this.startDate = toIso(start);
+        this.endDate = toIso(end);
+        this.rows = this._buildRows([]);
+      }
+
+      async _copy() {
+        const text = this._output;
+        try { await navigator.clipboard.writeText(text); }
+        catch { /* fallback handled by textarea select */ }
+        this.copied = true;
+        setTimeout(() => { this.copied = false; }, 2000);
+      }
+
+      _renderRow(row, i) {
+        const dow = row.date.getDay();
+        const label = dateLabel(row.date);
+        const colorStyle = dateColorClass(dow);
+
+        if (!row.enabled) {
+          return html`
+            <div class="bg-gray-100 rounded-lg border border-gray-200 px-3 py-2 flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="font-mono text-sm opacity-60" style=${colorStyle}>${label}</span>
+                <span class="text-xs text-gray-400">OFF</span>
+              </div>
+              <input type="checkbox" class="accent-blue-600 w-4 h-4 cursor-pointer"
+                @change=${(e) => this._setEnabled(i, e.target.checked)}>
+            </div>`;
+        }
+
+        return html`
+          <div class="bg-white rounded-lg shadow-sm border p-3 relative">
+            <input type="checkbox" class="absolute top-2.5 right-2.5 accent-blue-600 w-4 h-4 cursor-pointer"
+              checked @change=${(e) => this._setEnabled(i, e.target.checked)}>
+            <div class="font-mono font-bold text-base mb-2" style=${colorStyle}>${label}</div>
+            <div class="flex items-center gap-2 flex-wrap">
+              ${['work', 'lunch', 'dinner'].map(field => {
+                const f = FIELDS[field];
+                const val = row[field];
+                const isActive = val === f.activeVal;
+                return html`<button class="toggle-btn" ?data-active=${isActive}
+                  @click=${() => this._toggle(i, field)}>${f[val].btn}</button>`;
+              })}
+              <input type="text" maxlength="20" placeholder="備考" .value=${row.note}
+                @input=${(e) => this._setNote(i, e.target.value)}
+                class="border rounded-md px-2 py-1.5 text-sm flex-1 min-w-28 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+          </div>`;
+      }
+
+      render() {
+        const startLabel = this.startDate ? `${parseIso(this.startDate).getMonth()+1}/${parseIso(this.startDate).getDate()}` : '';
+        const endLabel = this.endDate ? `${parseIso(this.endDate).getMonth()+1}/${parseIso(this.endDate).getDate()}` : '';
+
+        return html`
+          <div class="max-w-2xl mx-auto px-4 pt-4 pb-2 w-full flex flex-col min-h-0 flex-1">
+            <!-- Header + Date Range -->
+            <div class="shrink-0 mb-3">
+              <h1 class="text-lg font-bold text-gray-800 mb-3">週間予定テキスト作成</h1>
+              <div class="bg-white rounded-lg shadow-sm border px-4 py-2.5 flex items-center gap-3">
+                <span class="text-sm text-gray-500 shrink-0">期間</span>
+                <div class="date-trigger inline-flex items-center border rounded-md px-3 py-1 bg-gray-50">
+                  <span class="text-sm font-medium tabular-nums">${startLabel}</span>
+                  <input type="date" .value=${this.startDate} @change=${(e) => this._onDateChange('startDate', e)}>
+                </div>
+                <span class="text-gray-400 shrink-0">〜</span>
+                <div class="date-trigger inline-flex items-center border rounded-md px-3 py-1 bg-gray-50">
+                  <span class="text-sm font-medium tabular-nums">${endLabel}</span>
+                  <input type="date" .value=${this.endDate} @change=${(e) => this._onDateChange('endDate', e)}>
+                </div>
+              </div>
+            </div>
+
+            <!-- Schedule Rows -->
+            <div class="space-y-2 flex-1 min-h-0 pb-2">
+              ${this.rows.map((row, i) => this._renderRow(row, i))}
+            </div>
+
+            <!-- Output -->
+            <div class="shrink-0 bg-white rounded-lg shadow-sm border p-3 mt-2">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-sm font-medium text-gray-700">出力</span>
+                <div class="flex gap-2">
+                  <button class="px-2.5 py-1 bg-gray-500 text-white text-xs rounded-md hover:bg-gray-600 cursor-pointer transition-colors"
+                    @click=${this._reset}><i class="fa-solid fa-rotate-left mr-0.5"></i>リセット</button>
+                  <button class="px-2.5 py-1 bg-green-600 text-white text-xs rounded-md hover:bg-green-700 cursor-pointer transition-colors"
+                    @click=${this._copy}><i class="fa-regular fa-copy mr-0.5"></i>コピー</button>
+                </div>
+              </div>
+              <textarea rows="5" .value=${this._output}
+                class="w-full border rounded-md p-2.5 text-sm font-mono resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+              ${this.copied ? html`<p class="text-xs text-green-600 mt-1">クリップボードにコピーしました</p>` : nothing}
+            </div>
+          </div>`;
+      }
+    }
+
+    customElements.define('schedule-generator', ScheduleGenerator);
+  </script>
+</body>
+</html>
