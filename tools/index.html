@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>週間予定テキストジェネレーター</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style type="text/tailwindcss">
+    @theme {
+      --color-brand: #3b82f6;
+    }
+    .toggle-btn {
+      @apply px-3 py-1.5 rounded-md text-sm font-medium border cursor-pointer select-none transition-colors;
+    }
+    .toggle-btn.active {
+      @apply bg-blue-600 text-white border-blue-600;
+    }
+    .toggle-btn:not(.active) {
+      @apply bg-white text-gray-600 border-gray-300 hover:bg-gray-50;
+    }
+    /* Hide native date input, show only via click */
+    .date-trigger { @apply relative cursor-pointer; }
+    .date-trigger input[type="date"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      width: 100%;
+      height: 100%;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body class="bg-gray-50 h-screen flex flex-col overflow-hidden">
+  <div class="max-w-2xl mx-auto px-4 pt-4 pb-2 w-full flex flex-col min-h-0 flex-1">
+
+    <!-- Header + Date Range -->
+    <div class="shrink-0 mb-3">
+      <h1 class="text-lg font-bold text-gray-800 mb-3">週間予定テキスト作成</h1>
+      <div class="bg-white rounded-lg shadow-sm border px-4 py-2.5 flex items-center gap-3">
+        <span class="text-sm text-gray-500 shrink-0">期間</span>
+        <div class="date-trigger inline-flex items-center border rounded-md px-3 py-1 bg-gray-50">
+          <span id="startLabel" class="text-sm font-medium tabular-nums"></span>
+          <input type="date" id="startDate" class="text-sm">
+        </div>
+        <span class="text-gray-400 shrink-0">〜</span>
+        <div class="date-trigger inline-flex items-center border rounded-md px-3 py-1 bg-gray-50">
+          <span id="endLabel" class="text-sm font-medium tabular-nums"></span>
+          <input type="date" id="endDate" class="text-sm">
+        </div>
+      </div>
+    </div>
+
+    <!-- Schedule Rows (scrollable) -->
+    <div id="scheduleRows" class="space-y-2 flex-1 overflow-y-auto min-h-0 pb-2"></div>
+
+    <!-- Output (sticky bottom) -->
+    <div class="shrink-0 bg-white rounded-lg shadow-sm border p-3 mt-2">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-sm font-medium text-gray-700">出力</span>
+        <div class="flex gap-2">
+          <button id="recreateBtn" class="px-2.5 py-1 bg-amber-500 text-white text-xs rounded-md hover:bg-amber-600 cursor-pointer transition-colors">
+            <i class="fa-solid fa-arrows-rotate mr-0.5"></i>再作成
+          </button>
+          <button id="resetBtn" class="px-2.5 py-1 bg-gray-500 text-white text-xs rounded-md hover:bg-gray-600 cursor-pointer transition-colors">
+            <i class="fa-solid fa-rotate-left mr-0.5"></i>リセット
+          </button>
+          <button id="copyBtn" class="px-2.5 py-1 bg-green-600 text-white text-xs rounded-md hover:bg-green-700 cursor-pointer transition-colors">
+            <i class="fa-regular fa-copy mr-0.5"></i>コピー
+          </button>
+        </div>
+      </div>
+      <textarea id="output" rows="5" class="w-full border rounded-md p-2.5 text-sm font-mono resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+      <p id="copyFeedback" class="text-xs text-green-600 mt-1 hidden">クリップボードにコピーしました</p>
+    </div>
+  </div>
+
+  <script>
+    const DAYS = ['日', '月', '火', '水', '木', '金', '土'];
+
+    let rows = [];
+
+    const startDateEl = document.getElementById('startDate');
+    const endDateEl = document.getElementById('endDate');
+    const startLabel = document.getElementById('startLabel');
+    const endLabel = document.getElementById('endLabel');
+    const scheduleRowsEl = document.getElementById('scheduleRows');
+    const outputEl = document.getElementById('output');
+    const copyBtn = document.getElementById('copyBtn');
+    const copyFeedback = document.getElementById('copyFeedback');
+
+    function today() {
+      const d = new Date();
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    }
+
+    function formatDateInput(d) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+
+    function formatLabel(s) {
+      const [, m, d] = s.split('-');
+      return `${parseInt(m)}/${parseInt(d)}`;
+    }
+
+    function syncLabels() {
+      startLabel.textContent = formatLabel(startDateEl.value);
+      endLabel.textContent = formatLabel(endDateEl.value);
+    }
+
+    function parseDateInput(s) {
+      const [y, m, d] = s.split('-').map(Number);
+      return new Date(y, m - 1, d);
+    }
+
+    function initDates() {
+      const start = today();
+      const end = new Date(start);
+      end.setDate(end.getDate() + 6);
+      startDateEl.value = formatDateInput(start);
+      endDateEl.value = formatDateInput(end);
+      syncLabels();
+    }
+
+    function buildRows() {
+      const start = parseDateInput(startDateEl.value);
+      const end = parseDateInput(endDateEl.value);
+      if (isNaN(start) || isNaN(end) || start > end) return;
+
+      const oldMap = new Map();
+      for (const r of rows) {
+        oldMap.set(r.date.getTime(), r);
+      }
+
+      const newRows = [];
+      const d = new Date(start);
+      while (d <= end) {
+        const key = d.getTime();
+        if (oldMap.has(key)) {
+          newRows.push(oldMap.get(key));
+        } else {
+          const dow = d.getDay();
+          newRows.push({
+            date: new Date(d),
+            enabled: dow !== 0 && dow !== 6,
+            work: 'office',
+            lunch: 'bento',
+            dinner: 'home',
+            note: '',
+          });
+        }
+        d.setDate(d.getDate() + 1);
+      }
+      rows = newRows;
+      syncLabels();
+      render();
+    }
+
+    function dateColorClass(dayIndex) {
+      if (dayIndex === 0) return 'text-red-600';
+      if (dayIndex === 6) return 'text-blue-600';
+      return 'text-gray-800';
+    }
+
+    function render() {
+      scheduleRowsEl.innerHTML = '';
+      rows.forEach((row, i) => {
+        const dow = row.date.getDay();
+        const dayOfWeek = DAYS[dow];
+        const m = row.date.getMonth() + 1;
+        const d = row.date.getDate();
+        const label = `${m}/${d}(${dayOfWeek})`;
+        const colorCls = dateColorClass(dow);
+
+        const el = document.createElement('div');
+        if (row.enabled) {
+          el.className = 'bg-white rounded-lg shadow-sm border p-3 relative';
+
+          const btnHtml = ['work', 'lunch', 'dinner'].map(field => {
+            const f = FIELDS[field];
+            const val = row[field];
+            const active = val === f.activeVal ? 'active' : '';
+            return `<button class="toggle-btn ${active}" data-i="${i}" data-field="${field}">${f[val].btn}</button>`;
+          }).join('\n              ');
+
+          el.innerHTML = `
+            <input type="checkbox" class="absolute top-2.5 right-2.5 accent-blue-600 w-4 h-4 cursor-pointer"
+              data-i="${i}" data-field="enabled" checked>
+            <div class="font-mono font-bold text-base mb-2 ${colorCls}">${label}</div>
+            <div class="flex items-center gap-2 flex-wrap">
+              ${btnHtml}
+              <input type="text" maxlength="20" placeholder="備考" value="${escapeAttr(row.note)}"
+                data-i="${i}" data-field="note"
+                class="border rounded-md px-2 py-1.5 text-sm flex-1 min-w-28 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+          `;
+        } else {
+          // Collapsed: single line with checkbox and date
+          el.className = 'bg-gray-100 rounded-lg border border-gray-200 px-3 py-2 flex items-center justify-between';
+          el.innerHTML = `
+            <div class="flex items-center gap-2">
+              <span class="font-mono text-sm ${colorCls} opacity-60">${label}</span>
+              <span class="text-xs text-gray-400">OFF</span>
+            </div>
+            <input type="checkbox" class="accent-blue-600 w-4 h-4 cursor-pointer"
+              data-i="${i}" data-field="enabled">
+          `;
+        }
+        scheduleRowsEl.appendChild(el);
+      });
+      generateOutput();
+    }
+
+    function escapeAttr(s) {
+      return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function generateOutput() {
+      const lines = rows.filter(r => r.enabled).map(row => {
+        const dayOfWeek = DAYS[row.date.getDay()];
+        const m = row.date.getMonth() + 1;
+        const d = row.date.getDate();
+        const dateStr = `${m}/${d}(${dayOfWeek})`;
+
+        // Build text from FIELDS definitions
+        let workLunch = FIELDS.work[row.work].text;
+        if (row.work === 'office') {
+          workLunch += FIELDS.lunch[row.lunch].text;
+        }
+
+        let parts = [workLunch];
+        const dinnerText = FIELDS.dinner[row.dinner].text;
+        if (dinnerText) parts.push(dinnerText);
+        if (row.note.trim()) parts.push(`（${row.note.trim()}）`);
+
+        let line = `${dateStr}  ${parts.join(' ')}`;
+        return line;
+      });
+      outputEl.value = lines.join('\n');
+    }
+
+    // Single source of truth for labels and toggle logic
+    const FIELDS = {
+      work: {
+        office: { btn: '💼出勤', text: '💼出勤' },
+        home:   { btn: '🏠在宅', text: '在宅' },
+        flip: { office: 'home', home: 'office' },
+        activeVal: 'office',
+      },
+      lunch: {
+        bento:     { btn: '🍱弁当',     text: '🍱' },
+        'eat-out': { btn: '🍽️弁当不要', text: '🍽️弁当不要' },
+        flip: { bento: 'eat-out', 'eat-out': 'bento' },
+        activeVal: 'bento',
+      },
+      dinner: {
+        home:      { btn: '🏠家で夕食', text: '' },
+        'eat-out': { btn: '🍽️夕飯不要', text: '夕飯不要' },
+        flip: { home: 'eat-out', 'eat-out': 'home' },
+        activeVal: 'home',
+      },
+    };
+
+    scheduleRowsEl.addEventListener('change', (e) => {
+      const el = e.target;
+      const i = parseInt(el.dataset.i);
+      if (isNaN(i)) return;
+      if (el.dataset.field === 'enabled') {
+        rows[i].enabled = el.checked;
+        render();
+      }
+    });
+
+    scheduleRowsEl.addEventListener('input', (e) => {
+      const el = e.target;
+      const i = parseInt(el.dataset.i);
+      if (isNaN(i)) return;
+      if (el.dataset.field === 'note') {
+        rows[i].note = el.value;
+        generateOutput();
+      }
+    });
+
+    scheduleRowsEl.addEventListener('click', (e) => {
+      const btn = e.target.closest('.toggle-btn');
+      if (!btn) return;
+      const i = parseInt(btn.dataset.i);
+      const field = btn.dataset.field;
+      if (isNaN(i) || !field) return;
+      rows[i][field] = FIELDS[field].flip[rows[i][field]];
+      render();
+    });
+
+    startDateEl.addEventListener('change', buildRows);
+    endDateEl.addEventListener('change', buildRows);
+
+    document.getElementById('recreateBtn').addEventListener('click', () => {
+      rows = [];
+      buildRows();
+    });
+
+    document.getElementById('resetBtn').addEventListener('click', () => {
+      rows = [];
+      initDates();
+      buildRows();
+    });
+
+    copyBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(outputEl.value);
+        copyFeedback.classList.remove('hidden');
+        setTimeout(() => copyFeedback.classList.add('hidden'), 2000);
+      } catch {
+        outputEl.select();
+        document.execCommand('copy');
+        copyFeedback.classList.remove('hidden');
+        setTimeout(() => copyFeedback.classList.add('hidden'), 2000);
+      }
+    });
+
+    initDates();
+    buildRows();
+  </script>
+</body>
+</html>
