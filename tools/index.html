@@ -76,173 +76,10 @@
   </div>
 
   <script>
+    // ── Constants ──
+
     const DAYS = ['日', '月', '火', '水', '木', '金', '土'];
 
-    let rows = [];
-
-    const startDateEl = document.getElementById('startDate');
-    const endDateEl = document.getElementById('endDate');
-    const startLabel = document.getElementById('startLabel');
-    const endLabel = document.getElementById('endLabel');
-    const scheduleRowsEl = document.getElementById('scheduleRows');
-    const outputEl = document.getElementById('output');
-    const copyBtn = document.getElementById('copyBtn');
-    const copyFeedback = document.getElementById('copyFeedback');
-
-    function today() {
-      const d = new Date();
-      return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    }
-
-    function formatDateInput(d) {
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      return `${y}-${m}-${day}`;
-    }
-
-    function formatLabel(s) {
-      const [, m, d] = s.split('-');
-      return `${parseInt(m)}/${parseInt(d)}`;
-    }
-
-    function syncLabels() {
-      startLabel.textContent = formatLabel(startDateEl.value);
-      endLabel.textContent = formatLabel(endDateEl.value);
-    }
-
-    function parseDateInput(s) {
-      const [y, m, d] = s.split('-').map(Number);
-      return new Date(y, m - 1, d);
-    }
-
-    function initDates() {
-      const start = today();
-      const end = new Date(start);
-      end.setDate(end.getDate() + 6);
-      startDateEl.value = formatDateInput(start);
-      endDateEl.value = formatDateInput(end);
-      syncLabels();
-    }
-
-    function buildRows() {
-      const start = parseDateInput(startDateEl.value);
-      const end = parseDateInput(endDateEl.value);
-      if (isNaN(start) || isNaN(end) || start > end) return;
-
-      const oldMap = new Map();
-      for (const r of rows) {
-        oldMap.set(r.date.getTime(), r);
-      }
-
-      const newRows = [];
-      const d = new Date(start);
-      while (d <= end) {
-        const key = d.getTime();
-        if (oldMap.has(key)) {
-          newRows.push(oldMap.get(key));
-        } else {
-          const dow = d.getDay();
-          newRows.push({
-            date: new Date(d),
-            enabled: dow !== 0 && dow !== 6,
-            work: 'office',
-            lunch: 'bento',
-            dinner: 'home',
-            note: '',
-          });
-        }
-        d.setDate(d.getDate() + 1);
-      }
-      rows = newRows;
-      syncLabels();
-      render();
-    }
-
-    function dateColorClass(dayIndex) {
-      if (dayIndex === 0) return 'text-red-600';
-      if (dayIndex === 6) return 'text-blue-600';
-      return 'text-gray-800';
-    }
-
-    function render() {
-      scheduleRowsEl.innerHTML = '';
-      rows.forEach((row, i) => {
-        const dow = row.date.getDay();
-        const dayOfWeek = DAYS[dow];
-        const m = row.date.getMonth() + 1;
-        const d = row.date.getDate();
-        const label = `${m}/${d}(${dayOfWeek})`;
-        const colorCls = dateColorClass(dow);
-
-        const el = document.createElement('div');
-        if (row.enabled) {
-          el.className = 'bg-white rounded-lg shadow-sm border p-3 relative';
-
-          const btnHtml = ['work', 'lunch', 'dinner'].map(field => {
-            const f = FIELDS[field];
-            const val = row[field];
-            const active = val === f.activeVal ? 'active' : '';
-            return `<button class="toggle-btn ${active}" data-i="${i}" data-field="${field}">${f[val].btn}</button>`;
-          }).join('\n              ');
-
-          el.innerHTML = `
-            <input type="checkbox" class="absolute top-2.5 right-2.5 accent-blue-600 w-4 h-4 cursor-pointer"
-              data-i="${i}" data-field="enabled" checked>
-            <div class="font-mono font-bold text-base mb-2 ${colorCls}">${label}</div>
-            <div class="flex items-center gap-2 flex-wrap">
-              ${btnHtml}
-              <input type="text" maxlength="20" placeholder="備考" value="${escapeAttr(row.note)}"
-                data-i="${i}" data-field="note"
-                class="border rounded-md px-2 py-1.5 text-sm flex-1 min-w-28 focus:outline-none focus:ring-2 focus:ring-blue-500">
-            </div>
-          `;
-        } else {
-          // Collapsed: single line with checkbox and date
-          el.className = 'bg-gray-100 rounded-lg border border-gray-200 px-3 py-2 flex items-center justify-between';
-          el.innerHTML = `
-            <div class="flex items-center gap-2">
-              <span class="font-mono text-sm ${colorCls} opacity-60">${label}</span>
-              <span class="text-xs text-gray-400">OFF</span>
-            </div>
-            <input type="checkbox" class="accent-blue-600 w-4 h-4 cursor-pointer"
-              data-i="${i}" data-field="enabled">
-          `;
-        }
-        scheduleRowsEl.appendChild(el);
-      });
-      generateOutput();
-    }
-
-    function escapeAttr(s) {
-      return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    }
-
-    function generateOutput() {
-      const lines = rows.filter(r => r.enabled).map(row => {
-        const dayOfWeek = DAYS[row.date.getDay()];
-        const m = row.date.getMonth() + 1;
-        const d = row.date.getDate();
-        const dateStr = `${m}/${d}(${dayOfWeek})`;
-
-        // Build text from FIELDS definitions
-        let workLunch = FIELDS.work[row.work].text;
-        if (row.work === 'office') {
-          workLunch += FIELDS.lunch[row.lunch].text;
-        }
-
-        let parts = [workLunch];
-        const dinnerText = FIELDS.dinner[row.dinner].text;
-        if (dinnerText) parts.push(dinnerText);
-        if (row.note.trim()) parts.push(`（${row.note.trim()}）`);
-
-        let line = `${dateStr}  ${parts.join(' ')}`;
-        return line;
-      });
-      outputEl.value = lines.join('\n');
-    }
-
-    // Single source of truth for labels and toggle logic
     const FIELDS = {
       work: {
         office: { btn: '💼出勤', text: '💼出勤' },
@@ -264,42 +101,165 @@
       },
     };
 
-    // Single delegated handler for all schedule row interactions
+    // ── Pure functions: dates ──
+
+    const today = () => {
+      const d = new Date();
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    };
+
+    const formatDateValue = (d) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+    const formatLabel = (s) => { const [, m, d] = s.split('-'); return `${parseInt(m)}/${parseInt(d)}`; };
+
+    const parseDateValue = (s) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+
+    const defaultRange = () => {
+      const start = today(), end = new Date(start);
+      end.setDate(end.getDate() + 6);
+      return { start: formatDateValue(start), end: formatDateValue(end) };
+    };
+
+    const dateRange = (start, end) => {
+      const dates = [];
+      for (const d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) dates.push(new Date(d));
+      return dates;
+    };
+
+    // ── Pure functions: row model ──
+
+    const createRow = (date) => {
+      const dow = date.getDay();
+      return { date, enabled: dow !== 0 && dow !== 6, work: 'office', lunch: 'bento', dinner: 'home', note: '' };
+    };
+
+    const mergeRows = (dates, existing) => {
+      const old = new Map(existing.map(r => [r.date.getTime(), r]));
+      return dates.map(d => old.get(d.getTime()) || createRow(d));
+    };
+
+    const updateRow = (rows, i, field, value) =>
+      rows.map((r, j) => j === i ? { ...r, [field]: value } : r);
+
+    // ── Pure functions: view ──
+
+    const dateColorClass = (dow) => dow === 0 ? 'text-red-600' : dow === 6 ? 'text-blue-600' : 'text-gray-800';
+    const escapeAttr = (s) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const dateLabel = (date) => `${date.getMonth() + 1}/${date.getDate()}(${DAYS[date.getDay()]})`;
+
+    const rowToHtml = (row, i) => {
+      const label = dateLabel(row.date);
+      const cls = dateColorClass(row.date.getDay());
+
+      if (!row.enabled) return `<div class="bg-gray-100 rounded-lg border border-gray-200 px-3 py-2 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="font-mono text-sm ${cls} opacity-60">${label}</span>
+              <span class="text-xs text-gray-400">OFF</span>
+            </div>
+            <input type="checkbox" class="accent-blue-600 w-4 h-4 cursor-pointer" data-i="${i}" data-field="enabled">
+          </div>`;
+
+      const btns = ['work', 'lunch', 'dinner'].map(field => {
+        const f = FIELDS[field], active = row[field] === f.activeVal ? 'active' : '';
+        return `<button class="toggle-btn ${active}" data-i="${i}" data-field="${field}">${f[row[field]].btn}</button>`;
+      }).join('\n              ');
+
+      return `<div class="bg-white rounded-lg shadow-sm border p-3 relative">
+            <input type="checkbox" class="absolute top-2.5 right-2.5 accent-blue-600 w-4 h-4 cursor-pointer"
+              data-i="${i}" data-field="enabled" checked>
+            <div class="font-mono font-bold text-base mb-2 ${cls}">${label}</div>
+            <div class="flex items-center gap-2 flex-wrap">
+              ${btns}
+              <input type="text" maxlength="20" placeholder="備考" value="${escapeAttr(row.note)}"
+                data-i="${i}" data-field="note"
+                class="border rounded-md px-2 py-1.5 text-sm flex-1 min-w-28 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+          </div>`;
+    };
+
+    const rowsToOutputText = (rows) =>
+      rows.filter(r => r.enabled).map(row => {
+        let workLunch = FIELDS.work[row.work].text;
+        if (row.work === 'office') workLunch += FIELDS.lunch[row.lunch].text;
+        const parts = [workLunch];
+        const dt = FIELDS.dinner[row.dinner].text;
+        if (dt) parts.push(dt);
+        if (row.note.trim()) parts.push(`（${row.note.trim()}）`);
+        return `${dateLabel(row.date)}  ${parts.join(' ')}`;
+      }).join('\n');
+
+    // ── DOM references (single collection of side-effect targets) ──
+
+    const $ = (id) => document.getElementById(id);
+    const dom = {
+      startDate: $('startDate'), endDate: $('endDate'),
+      startLabel: $('startLabel'), endLabel: $('endLabel'),
+      rows: $('scheduleRows'), output: $('output'), copyFeedback: $('copyFeedback'),
+    };
+
+    // ── State & rendering (side effects isolated here) ──
+
+    let state = { rows: [] };
+
+    const syncOutput = () => { dom.output.value = rowsToOutputText(state.rows); };
+
+    const syncView = () => {
+      dom.startLabel.textContent = formatLabel(dom.startDate.value);
+      dom.endLabel.textContent = formatLabel(dom.endDate.value);
+      dom.rows.innerHTML = state.rows.map(rowToHtml).join('');
+      syncOutput();
+    };
+
+    const setRows = (rows) => { state = { rows }; syncView(); };
+
+    const rebuild = () => {
+      const start = parseDateValue(dom.startDate.value), end = parseDateValue(dom.endDate.value);
+      if (isNaN(start) || isNaN(end) || start > end) return;
+      setRows(mergeRows(dateRange(start, end), state.rows));
+    };
+
+    const initDates = () => {
+      const { start, end } = defaultRange();
+      dom.startDate.value = start;
+      dom.endDate.value = end;
+    };
+
+    // ── Event binding ──
+
     function handleRowEvent(e) {
       const el = e.target.closest('[data-i]');
       if (!el) return;
-      const i = parseInt(el.dataset.i);
-      const field = el.dataset.field;
+      const i = parseInt(el.dataset.i), field = el.dataset.field;
       if (isNaN(i) || !field) return;
 
       if (field === 'enabled') {
-        rows[i].enabled = el.checked;
-        render();
+        setRows(updateRow(state.rows, i, 'enabled', el.checked));
       } else if (field === 'note') {
-        rows[i].note = el.value;
-        generateOutput();
+        state = { rows: updateRow(state.rows, i, 'note', el.value) };
+        syncOutput();
       } else if (FIELDS[field]) {
-        rows[i][field] = FIELDS[field].flip[rows[i][field]];
-        render();
+        setRows(updateRow(state.rows, i, field, FIELDS[field].flip[state.rows[i][field]]));
       }
     }
-    scheduleRowsEl.addEventListener('click', handleRowEvent);
-    scheduleRowsEl.addEventListener('input', handleRowEvent);
 
-    startDateEl.addEventListener('change', buildRows);
-    endDateEl.addEventListener('change', buildRows);
-
-    document.getElementById('recreateBtn').addEventListener('click', () => { rows = []; buildRows(); });
-    document.getElementById('resetBtn').addEventListener('click', () => { rows = []; initDates(); buildRows(); });
-    copyBtn.addEventListener('click', async () => {
-      try { await navigator.clipboard.writeText(outputEl.value); }
-      catch { outputEl.select(); document.execCommand('copy'); }
-      copyFeedback.classList.remove('hidden');
-      setTimeout(() => copyFeedback.classList.add('hidden'), 2000);
+    dom.rows.addEventListener('click', handleRowEvent);
+    dom.rows.addEventListener('input', handleRowEvent);
+    dom.startDate.addEventListener('change', rebuild);
+    dom.endDate.addEventListener('change', rebuild);
+    $('recreateBtn').addEventListener('click', () => { state = { rows: [] }; rebuild(); });
+    $('resetBtn').addEventListener('click', () => { state = { rows: [] }; initDates(); rebuild(); });
+    $('copyBtn').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(dom.output.value); }
+      catch { dom.output.select(); document.execCommand('copy'); }
+      dom.copyFeedback.classList.remove('hidden');
+      setTimeout(() => dom.copyFeedback.classList.add('hidden'), 2000);
     });
 
+    // ── Init ──
+
     initDates();
-    buildRows();
+    rebuild();
   </script>
 </body>
 </html>
