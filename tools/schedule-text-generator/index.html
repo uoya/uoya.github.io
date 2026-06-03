@@ -177,7 +177,7 @@
       }
 
       async _copy() {
-        const text = this._output;
+        const text = this.querySelector('textarea').value;
         try { await navigator.clipboard.writeText(text); }
         catch { /* fallback */ }
         this.copied = true;
