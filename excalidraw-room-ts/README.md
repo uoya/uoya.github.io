@@ -45,7 +45,7 @@ npm run dev
 | `PORT` | `3002` | リッスンポート |
 | `CORS_ORIGIN` | `*`（全許可） | `Access-Control-Allow-Origin` に設定するオリジン |
 
-## Docker
+## Docker（room サーバー単体）
 
 ```bash
 docker build -t excalidraw-room-ts .
@@ -59,6 +59,33 @@ docker run -p 3002:3002 \
   -e CORS_ORIGIN=https://excalidraw.com \
   excalidraw-room-ts
 ```
+
+## ローカル共同編集テスト環境（Docker Compose）
+
+Excalidraw フロントエンドと room サーバーをまとめて起動できます。
+
+```bash
+docker compose up --build
+```
+
+起動後、ブラウザで http://localhost を開いてください。
+
+> **注意**: 初回ビルド時に Excalidraw をソースからコンパイルするため、完了まで **5〜10 分**かかります。
+> 2 回目以降は Docker のレイヤーキャッシュが効くため高速です。
+
+### 構成
+
+```
+ブラウザ
+  │  http://localhost (port 80)
+  ▼
+nginx
+  ├── /           → Excalidraw 静的ファイル
+  └── /socket.io/ → room サーバー (内部 port 3002)
+```
+
+`VITE_APP_WS_SERVER_URL` を空にしてビルドすることで、socket.io-client が
+ページと同じホストに接続し、nginx が WebSocket を room サーバーへ転送します。
 
 ## 参照実装
 

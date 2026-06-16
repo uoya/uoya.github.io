@@ -1,0 +1,18 @@
+services:
+  room:
+    build:
+      context: .
+    environment:
+      PORT: "3002"
+      CORS_ORIGIN: "http://localhost"
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    ports:
+      - "80:80"
+    depends_on:
+      - room
+    restart: unless-stopped
