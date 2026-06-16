@@ -47,19 +47,14 @@ io.on("connection", (socket) => {
     );
   });
 
-  socket.on(
-    "server-broadcast",
-    (roomID: string, encryptedData: ArrayBuffer, iv: Uint8Array) => {
-      socket.broadcast.to(roomID).emit("client-broadcast", encryptedData, iv);
-    },
-  );
+  socket.on("server-broadcast", (roomID: string, encryptedData: ArrayBuffer, iv: Uint8Array) => {
+    socket.broadcast.to(roomID).emit("client-broadcast", encryptedData, iv);
+  });
 
   socket.on(
     "server-volatile-broadcast",
     (roomID: string, encryptedData: ArrayBuffer, iv: Uint8Array) => {
-      socket.volatile.broadcast
-        .to(roomID)
-        .emit("client-broadcast", encryptedData, iv);
+      socket.volatile.broadcast.to(roomID).emit("client-broadcast", encryptedData, iv);
     },
   );
 
@@ -90,9 +85,7 @@ io.on("connection", (socket) => {
 
   socket.on("disconnecting", async () => {
     for (const roomID of socket.rooms) {
-      const otherClients = (await io.in(roomID).fetchSockets()).filter(
-        (s) => s.id !== socket.id,
-      );
+      const otherClients = (await io.in(roomID).fetchSockets()).filter((s) => s.id !== socket.id);
       const isFollowRoom = roomID.startsWith("follow@");
 
       if (!isFollowRoom && otherClients.length > 0) {
