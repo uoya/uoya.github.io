@@ -1,5 +1,6 @@
 import http from "http";
 import { Server as SocketIO } from "socket.io";
+import { initStorage, loadRoomState, scheduleSave } from "./storage.js";
 
 type UserToFollow = {
   socketId: string;
@@ -30,6 +31,8 @@ const io = new SocketIO(httpServer, {
   allowEIO3: true,
 });
 
+initStorage().catch(console.error);
+
 io.on("connection", (socket) => {
   io.to(socket.id).emit("init-room");
 
@@ -38,6 +41,14 @@ io.on("connection", (socket) => {
     const sockets = await io.in(roomID).fetchSockets();
     if (sockets.length <= 1) {
       io.to(socket.id).emit("first-in-room");
+      // Restore persisted room state for the first client in an empty room
+      loadRoomState(roomID)
+        .then((state) => {
+          if (state) {
+            io.to(socket.id).emit("client-broadcast", state.encryptedData, state.iv);
+          }
+        })
+        .catch(console.error);
     } else {
       socket.broadcast.to(roomID).emit("new-user", socket.id);
     }
@@ -49,12 +60,14 @@ io.on("connection", (socket) => {
 
   socket.on("server-broadcast", (roomID: string, encryptedData: ArrayBuffer, iv: Uint8Array) => {
     socket.broadcast.to(roomID).emit("client-broadcast", encryptedData, iv);
+    scheduleSave(roomID, encryptedData, iv);
   });
 
   socket.on(
     "server-volatile-broadcast",
     (roomID: string, encryptedData: ArrayBuffer, iv: Uint8Array) => {
       socket.volatile.broadcast.to(roomID).emit("client-broadcast", encryptedData, iv);
+      // Volatile broadcasts carry cursor/pointer positions — skip persistence
     },
   );
 

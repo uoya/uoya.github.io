@@ -1,10 +1,31 @@
 services:
+  rustfs:
+    image: rustfs/rustfs:latest
+    ports:
+      - "9001:9001"   # Web console: http://localhost:9001 (rustfsadmin / rustfsadmin)
+    volumes:
+      - rustfs_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9000/minio/health/live || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
   room:
     build:
       context: .
     environment:
       PORT: "3002"
       CORS_ORIGIN: "http://localhost"
+      STORAGE_ENDPOINT: "http://rustfs:9000"
+      STORAGE_ACCESS_KEY: "rustfsadmin"
+      STORAGE_SECRET_KEY: "rustfsadmin"
+      STORAGE_BUCKET: "excalidraw-rooms"
+    depends_on:
+      rustfs:
+        condition: service_healthy
     restart: unless-stopped
 
   web:
@@ -16,3 +37,8 @@ services:
     depends_on:
       - room
     restart: unless-stopped
+
+# Named volume — persists across `docker compose up/down` and `--build`.
+# Data is only removed explicitly with `docker compose down -v` or `docker volume rm`.
+volumes:
+  rustfs_data:
